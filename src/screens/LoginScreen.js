@@ -1,15 +1,37 @@
 import { Input, NativeBaseProvider, Icon, Text, View, Button } from 'native-base'
-import React, { useState } from 'react'
+import { useState, useEffect } from "react";
+import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons, AntDesign } from "@expo/vector-icons"
-import { Image, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native'
+import { Image, StyleSheet, TouchableOpacity, ScrollView, TextInput, Platform } from 'react-native'
 import { Formik } from 'formik';
 import * as yup from 'yup';
 import Welcome from '../components/login/Welcome'
-import { useNavigation } from '@react-navigation/native';
+import * as Google from 'expo-google-app-auth';
+//import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import {firebase} from '../db/firebase.js';
+import { getUsersByOneParameter, saveUser } from '../api/userApi.js'
 
 export default function LoginScreen() {
 
     const navegation = useNavigation()
+    //const storage = AsyncStorage()
+    const [typeDivice, setTypeDivice] = useState("");
+    const [user, setUser] = useState();
+    const [resultLogIn, setResultLogIn] = useState("");
+    useEffect(() => {
+        setTypeDivice(Platform.OS)
+        firebase.auth().onAuthStateChanged(async (user)=> {
+                if(user){
+                    console.log(user)
+                    navegation.navigate('HomeScreen')
+                }
+            }
+        )
+      });
+    
 
     const loginValidationSchema = yup.object().shape({
         email: yup
@@ -20,6 +42,64 @@ export default function LoginScreen() {
             .string()
             .required('Se requiere contraseña'),
     })
+
+    sigInWithAndroid= async () =>{
+        const result = await Google.logInAsync({
+            behavior: 'web',
+            androidClientId: '78048458976-lq1b57fq645predvei1qhqd5fsbqne8d.apps.googleusercontent.com',
+            scopes: ['profile', 'email'],
+        });
+        setUser(result.user)
+        setResultLogIn(result.type)
+    }
+    sigInWithIOS = async () =>{
+        const result = await Google.logInAsync({
+            behavior: 'web',
+            iosClientId: '78048458976-frl92v24nm2loj7lvbp4d5q1plf9qu7n.apps.googleusercontent.com',
+            scopes: ['profile', 'email'],
+          });
+          setUser(result.user)
+          setResultLogIn(result.type)
+    }
+
+    signInWithGoogleAsync = async () => {
+
+        
+        try {
+            if(typeDivice === 'android'){
+                await sigInWithAndroid();
+            }else{
+                await sigInWithIOS();
+            }
+            if (resultLogIn === 'success') {
+                var users = await getUsersByOneParameter('email',user.email)
+                await AsyncStorage.setItem('name', user.name);
+                await AsyncStorage.setItem('email', user.email);
+                await AsyncStorage.setItem('photo', user.photoUrl);
+                if(users.length > 0){
+                    if(users[0].state > 1){
+                        await AsyncStorage.setItem('id', users[0].id);
+                        navegation.navigate('HomeScreen')
+                    }else{
+                        navegation.navigate('CompleteInformationScreen')
+                    }
+                }else{
+                    var result = await saveUser(user.name, user.name, user.id, user.email, user.photoUrl, 1, 'User')
+                    if(result){
+                        navegation.navigate('CompleteInformationScreen')
+                    }else{
+                        navegation.navigate('LoginScreen')
+                    }
+                }
+            } else {
+                return { cancelled: true };
+            }
+        } catch (e) {
+            console.log(e)
+            return { error: true };
+        }
+        
+    }
 
     return (
         <NativeBaseProvider>
@@ -113,7 +193,7 @@ export default function LoginScreen() {
                                 source={require('../assets/icons/facebook.png')}
                             />
                         </TouchableOpacity>
-                        <TouchableOpacity>
+                        <TouchableOpacity onPress={() => signInWithGoogleAsync()}>
                             <Image
                                 style={{ width: 50, height: 50 }}
                                 source={require('../assets/icons/google.png')}
